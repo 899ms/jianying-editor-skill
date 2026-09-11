@@ -293,3 +293,13 @@ git pull
     </td>
   </tr>
 </table>
+
+---
+
+## 🙏 致谢与开源协议 (Acknowledgements & License)
+
+- **本项目许可**：本项目基于 [MIT License](LICENSE) 开源。
+- **底层依赖致谢**：本项目底层草稿数据映射与基础控制层内嵌并二次开发了开源项目 [**pyJianYingDraft**](https://github.com/GuanYixuan/pyJianYingDraft)（作者：[GuanYixuan (管奕轩)](https://github.com/GuanYixuan)）。
+  - 该底层模块遵循 [Apache License 2.0](scripts/vendor/pyJianYingDraft/LICENSE)；
+  - 本项目在其基础上完成了现代剪映 Pro 5.9+ / 6.x+ `draft_info.json` 架构升级、草稿自包含防丢机制、macOS 沙盒兼容及全套面向 AI Agent 的高层剪辑自动化封装；
+  - 在此向原作者的开源贡献致以诚挚敬意！
