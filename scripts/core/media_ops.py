@@ -1,3 +1,4 @@
+import hashlib
 import os
 import shutil
 import sys
@@ -43,7 +44,8 @@ class MediaOpsMixin:
                 media_path = normalized_path
                 ext = os.path.splitext(media_path)[1].lower()
 
-        media_path = self._stage_media_for_jianying(media_path)
+        # 复制进草稿目录，使草稿自包含，规避 macOS 沙盒拦截及 Windows 5.9+ 外部素材丢失问题
+        media_path = self._stage_local_asset(media_path)
 
         if ext in [".mp3", ".wav", ".aac", ".flac", ".m4a", ".ogg"]:
             return self.add_audio_safe(media_path, start_time, duration, track_name or "AudioTrack")
@@ -52,43 +54,47 @@ class MediaOpsMixin:
             media_path, start_time, duration, track_name or "VideoTrack", source_start=source_start
         )
 
-    def _stage_media_for_jianying(self, media_path: str) -> str:
-        """
-        macOS 剪映是沙盒应用，草稿引用项目目录里的文件时经常没有访问权限。
-        将素材复制到草稿目录内部，避免打开草稿后提示“无访问权限/媒体格式不支持”。
-        """
-        if sys.platform != "darwin":
-            return media_path
+    def _stage_local_asset(self, media_path: str, subdir: str = "materials") -> str:
+        """把外部本地素材复制进草稿目录内部（默认 materials/ 子目录），返回副本绝对路径。
 
-        draft_dir = getattr(self, "draft_dir", "")
-        if not draft_dir:
-            return media_path
-
-        abs_media = os.path.abspath(media_path)
-        abs_draft = os.path.abspath(draft_dir)
+        1. macOS (Darwin)：剪映为沙盒应用，草稿引用外部路径常因系统权限提示格式不支持或无法访问；
+        2. 全平台 (Windows/macOS/Linux)：若素材在临时目录，源文件被清理会导致剪映 5.9+ 报“检测到媒体丢失”；
+        复制进草稿目录可让工程自包含、路径永久稳定。
+        若素材已在草稿目录内，则跳过复制。
+        """
         try:
-            if os.path.commonpath([abs_draft, abs_media]) == abs_draft:
-                return abs_media
-        except ValueError:
-            pass
+            draft_dir = getattr(self, "draft_dir", "")
+            if not draft_dir:
+                return media_path
 
-        media_dir = os.path.join(abs_draft, "media")
-        os.makedirs(media_dir, exist_ok=True)
+            abs_media = os.path.abspath(media_path)
+            abs_draft = os.path.abspath(draft_dir)
 
-        base, ext = os.path.splitext(os.path.basename(abs_media))
-        safe_base = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in base)
-        staged = os.path.join(media_dir, f"{safe_base}{ext.lower()}")
-        if os.path.exists(staged) and os.path.getmtime(staged) >= os.path.getmtime(abs_media):
+            try:
+                if os.path.commonpath([abs_draft, abs_media]) == abs_draft:
+                    return abs_media
+            except ValueError:
+                pass
+
+            target_dir = os.path.join(abs_draft, subdir)
+            os.makedirs(target_dir, exist_ok=True)
+
+            ext = os.path.splitext(abs_media)[1].lower()
+            digest = hashlib.md5(abs_media.encode("utf-8")).hexdigest()
+            staged = os.path.join(target_dir, f"{digest}{ext}")
+
+            if os.path.exists(staged) and os.path.getsize(staged) == os.path.getsize(abs_media):
+                return staged
+
+            shutil.copy2(abs_media, staged)
             return staged
+        except Exception as e:
+            print(f"⚠️ 素材复制进草稿目录失败，回退使用源路径: {e}")
+            return media_path
 
-        candidate = staged
-        index = 1
-        while os.path.exists(candidate) and not os.path.samefile(candidate, abs_media):
-            candidate = os.path.join(media_dir, f"{safe_base}_{index}{ext.lower()}")
-            index += 1
-
-        shutil.copy2(abs_media, candidate)
-        return candidate
+    def _stage_media_for_jianying(self, media_path: str) -> str:
+        """兼容 macOS 剪映沙盒的暂存接口（向后兼容/单测兼容）"""
+        return self._stage_local_asset(media_path, subdir="media")
 
     def add_audio_safe(
         self,
@@ -209,49 +215,16 @@ class MediaOpsMixin:
         if start_time is None:
             start_time = self.get_track_duration(track_name)
 
-        # 优先使用真实本地缓存文件，避免生成虚拟路径导致“媒体丢失”提示。
-        # 若下载失败，再回退到旧的 mock 注入模式。
+        # 仅使用真实下载的本地缓存文件。虚拟路径（如 cloud_music_xxx.mp3）在磁盘上
+        # 并不存在，会直接触发剪映“检测到媒体丢失”。下载失败时直接报错返回。
         local_path = self.cloud_manager.download_asset(query)
-        if local_path and os.path.exists(local_path):
-            seg = self.add_audio_safe(
-                local_path, start_time=start_time, duration=duration, track_name=track_name
-            )
-            if seg is not None:
-                return seg
+        if not local_path or not os.path.exists(local_path):
+            print(f"❌ Cloud music download failed: '{query}'. Aborted to avoid media-missing error.")
+            return None
 
-        # 1. 如果没给 duration_s，尝试查表
-        actual_duration_s = duration_s
-        if not actual_duration_s:
-            actual_duration_s = self.cloud_manager.get_asset_duration(query)
-
-        if not actual_duration_s:
-            print(f"⚠️ Warning: Duration for cloud music '{query}' not found. Using fallback 3.0s")
-            actual_duration_s = 3.0
-
-        final_dur_us = safe_tim(duration) if duration else int(actual_duration_s * 1000000)
-
-        # 2. 注入 Patch
-        dummy_path = (
-            local_path
-            if (local_path and os.path.exists(local_path))
-            else f"cloud_music_{query}.mp3"
+        return self.add_audio_safe(
+            local_path, start_time=start_time, duration=duration, track_name=track_name
         )
-        self._cloud_audio_patches[dummy_path] = {"id": query, "type": "music"}
-
-        # 3. 使用 Mock 素材
-        from core.mocking_ops import MockAudioMaterial
-
-        mat = MockAudioMaterial(query, final_dur_us, name or f"CloudMusic_{query}", dummy_path)
-        seg = draft.AudioSegment(
-            mat,
-            draft.Timerange(safe_tim(start_time), final_dur_us),
-            source_timerange=draft.Timerange(0, final_dur_us),
-        )
-
-        self._ensure_track(draft.TrackType.audio, track_name)
-        target_track = self._find_available_audio_track_name(track_name, seg)
-        self.script.add_segment(seg, target_track)
-        return seg
 
     def _find_available_audio_track_name(self, base_track_name: str, segment) -> str:
         preferred = base_track_name or "AudioTrack"

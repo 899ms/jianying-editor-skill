@@ -288,6 +288,30 @@ class TestJyWrapper(unittest.TestCase):
         ):
             self.assertFalse(should_normalize_video_for_jianying("ok.mp4"))
 
+    def test_18_staged_media_and_local_material_id_stable(self):
+        """测试本地视频导入时自动暂存自包含且生成非空稳定的 local_material_id"""
+        real_video = os.path.join(skill_root, "assets", "video.mp4")
+        p = JyProject("TestStageAndId", drafts_root=self.test_output, overwrite=True)
+        seg = p.add_media_safe(real_video)
+        self.assertIsNotNone(seg)
+        # 路径应被暂存至 materials 目录
+        self.assertTrue(seg.material_instance.path.startswith(os.path.join(p.draft_dir, "materials")))
+        # local_material_id 必须非空且等于文件名 stem
+        expected_stem = os.path.splitext(os.path.basename(seg.material_instance.path))[0]
+        self.assertEqual(seg.material_instance.local_material_id, expected_stem)
+        self.assertTrue(len(seg.material_instance.local_material_id) > 0)
+
+    def test_19_cloud_music_download_failure_aborts_without_dummy_path(self):
+        """测试云音乐下载失败时不会注入不存在的虚拟文件路径"""
+        p = JyProject("TestCloudMusicFail", drafts_root=self.test_output, overwrite=True)
+        with patch.object(p.cloud_manager, "download_asset", return_value=None):
+            seg = p.add_cloud_music("non_existent_music_id_99999")
+            self.assertIsNone(seg)
+            # 音频轨道不应存在失效段
+            tracks = [t for t in p.script.tracks if t.type == draft.TrackType.audio]
+            for t in tracks:
+                self.assertEqual(len(t.segments), 0)
+
     @classmethod
     def tearDownClass(cls):
         # 清理测试产物

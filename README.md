@@ -171,6 +171,19 @@ git pull
 
 最新版本请直接查看 [CHANGELOG.md](CHANGELOG.md) 与 [VERSION](VERSION)。
 
+### v1.7 (2026-09-11) - 剪映 5.9+ 媒体丢失彻底修复 & macOS 沙盒与素材自包含增强
+- **草稿素材自包含与媒体丢失彻底修复** (感谢 @shaozheliu):
+  - 修复剪映 Pro 5.9+ 导入素材后报“检测到媒体丢失，请重新链接后再剪辑”问题。
+  - 为 `VideoMaterial` 与 `AudioMaterial` 规范生成稳定非空的 `local_material_id`。
+  - 外部素材统一自动暂存至草稿目录，避免外部临时文件清理导致草稿损坏。
+  - 移除云音乐失效的虚拟路径 fallback，下载失败显式报错，避免生成损坏草稿。
+- **macOS 全面兼容与媒体解析健壮性** (感谢 @twodogegg):
+  - 优先探测现代 macOS 剪映草稿根目录并支持 `.agents` 目录安装。
+  - 当缺失 `pymediainfo` 或 `libmediainfo` 时自动回退至 `ffprobe` 解析媒体信息。
+  - 新增非标视频几何尺寸规整化 (`media_normalizer.py`)，规避剪映解析崩溃。
+  - 导出命令在 macOS 下增加优雅提示，避免 Windows UI 自动化误执行。
+  - 完善全套测试覆盖与回归验证。
+
 ### v1.6 (2026-06-24) - macOS 新版剪映草稿适配
 - **macOS 草稿生成适配**:
   - 优先探测 `~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft`。
@@ -222,6 +235,45 @@ git pull
   - 录完就能**一键生成草稿**！不用手动打开剪映，不用导入素材，点一下按钮，草稿就躺在你的剪映里了。
   - 终于支持连续录制了，一口气录十段素材也不用重启软件。
   - 录像文件会自动整理好，不再乱丢在桌面。
+
+---
+
+## 🤝 贡献者 (Contributors)
+
+感谢所有为本项目做出贡献的开发者！每一份代码、Issue 与改进建议都让这个项目更加健全稳定。
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/luoluoluo22">
+        <img src="https://github.com/luoluoluo22.png" width="80px;" alt="luoluoluo22"/><br />
+        <sub><b>luoluoluo22</b></sub>
+      </a><br />
+      <sub>项目作者 / Maintainer</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/twodogegg">
+        <img src="https://github.com/twodogegg.png" width="80px;" alt="twodogegg"/><br />
+        <sub><b>twodogegg</b></sub>
+      </a><br />
+      <sub>macOS 兼容 / ffprobe 回退 / 单测体系 (#20)</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/shaozheliu">
+        <img src="https://github.com/shaozheliu.png" width="80px;" alt="shaozheliu"/><br />
+        <sub><b>shaozheliu</b></sub>
+      </a><br />
+      <sub>修复 5.9+ 媒体丢失 / 素材自包含 (#23)</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Maxinsomnia">
+        <img src="https://github.com/Maxinsomnia.png" width="80px;" alt="Maxinsomnia"/><br />
+        <sub><b>Maxinsomnia</b></sub>
+      </a><br />
+      <sub>macOS 剪映 5.9+ 架构执行支持 (#15)</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
